@@ -2,33 +2,38 @@
 #include <MFRC522.h>
 #include <LiquidCrystal.h>
 
-// RFID 핀 설정
-#define SS_PIN 11
-#define RST_PIN 10
+// RFID 모듈 관련 변수
+const int SS_PIN 11
+const int RST_PIN 10
 MFRC522 rfid(SS_PIN, RST_PIN);
 
+unsigned long lastRfidCheckTime = 0;
+const unsigned long rfidCheckInterval = 1000; // RFID 체크 간격 (단위: ms)
+bool isPhoneDetected = false;
+
 // 초음파 센서 및 LED, 부저 핀 설정
+// (8~9, A0~A2)
 const int trigPin = 9;
 const int echoPin = 8;
 const int redLedPin = A0;
 const int buzzerPin = A1;
 const int drivingButtonPin = A2;
 
-// LCD 핀 설정 (겹치지 않는 핀으로 변경)
-const int rs = 2, en = 3, d4 = 4, d5 = 5, d6 = 6, d7 = 7;
-LiquidCrystal lcd(rs, en, d4, d5, d6, d7);
-
 const int distanceThreshold = 10; // 터치를 감지할 거리 임계값 (단위: cm)
 const int debounceDelay = 100; // 터치 해제 딜레이 (단위: ms)
 const int touchThreshold = 20; // 터치 횟수 임계값
-bool isDriving = false;
+
 bool isTouchDetected = false;
 unsigned long lastTouchTime = 0;
 int touchCount = 0;
+
+// LCD 핀 설정(2~7)
+const int rs = 2, en = 3, d4 = 4, d5 = 5, d6 = 6, d7 = 7;
+LiquidCrystal lcd(rs, en, d4, d5, d6, d7);
+
+// 운전 중 상태 체크 관련 변수
+bool isDriving = false;
 unsigned long lastButtonPressTime = 0; // 버튼 디바운스 처리를 위한 시간 변수
-unsigned long lastRfidCheckTime = 0;
-const unsigned long rfidCheckInterval = 1000; // RFID 체크 간격 (단위: ms)
-bool isPhoneDetected = false;
 
 void setup() {
     Serial.begin(9600);
