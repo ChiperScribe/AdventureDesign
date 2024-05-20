@@ -30,9 +30,6 @@ unsigned long lastRfidCheckTime = 0;
 const unsigned long rfidCheckInterval = 1000; // RFID 체크 간격 (단위: ms)
 bool isPhoneDetected = false;
 
-// 사전 등록된 휴대전화 RFID 태그 번호
-byte phoneTag[] = {0xDE, 0xAD, 0xBE, 0xEF}; // 예제 RFID 태그 번호
-
 void setup() {
     Serial.begin(9600);
     SPI.begin();
@@ -66,13 +63,8 @@ void loop() {
         if (millis() - lastRfidCheckTime > rfidCheckInterval) {
             lastRfidCheckTime = millis();
             if (rfid.PICC_IsNewCardPresent() && rfid.PICC_ReadCardSerial()) {
-                if (isPhoneTag(rfid.uid.uidByte, rfid.uid.size)) {
-                    isPhoneDetected = true;
-                    Serial.println("Phone detected!");
-                } else {
-                    isPhoneDetected = false;
-                    Serial.println("Unknown RFID tag detected.");
-                }
+                isPhoneDetected = true;
+                Serial.println("Phone detected!");
                 rfid.PICC_HaltA();
             } else {
                 isPhoneDetected = false;
@@ -147,17 +139,4 @@ void endDrivingSession() {
     isPhoneDetected = false;
     digitalWrite(redLedPin, LOW);
     noTone(buzzerPin);
-}
-
-// RFID 태그가 사전 등록된 휴대전화 태그인지 확인하는 함수
-bool isPhoneTag(byte *tag, byte size) {
-    if (size != sizeof(phoneTag)) {
-        return false; // 크기가 다르면 일치하지 않음
-    }
-    for (byte i = 0; i < size; i++) {
-        if (tag[i] != phoneTag[i]) {
-            return false; // 한 바이트라도 다르면 일치하지 않음
-        }
-    }
-    return true; // 모든 바이트가 일치하면 휴대전화 태그로 간주
 }
