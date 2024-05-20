@@ -1,0 +1,163 @@
+#include <SPI.h>
+#include <MFRC522.h>
+#include <LiquidCrystal.h>
+
+// RFID 핀 설정
+#define SS_PIN 11
+#define RST_PIN 10
+MFRC522 rfid(SS_PIN, RST_PIN);
+
+// 초음파 센서 및 LED, 부저 핀 설정
+const int trigPin = 9;
+const int echoPin = 8;
+const int redLedPin = A0;
+const int buzzerPin = A1;
+const int drivingButtonPin = A2;
+
+// LCD 핀 설정 (겹치지 않는 핀으로 변경)
+const int rs = 2, en = 3, d4 = 4, d5 = 5, d6 = 6, d7 = 7;
+LiquidCrystal lcd(rs, en, d4, d5, d6, d7);
+
+const int distanceThreshold = 10; // 터치를 감지할 거리 임계값 (단위: cm)
+const int debounceDelay = 100; // 터치 해제 딜레이 (단위: ms)
+const int touchThreshold = 20; // 터치 횟수 임계값
+bool isDriving = false;
+bool isTouchDetected = false;
+unsigned long lastTouchTime = 0;
+int touchCount = 0;
+unsigned long lastButtonPressTime = 0; // 버튼 디바운스 처리를 위한 시간 변수
+unsigned long lastRfidCheckTime = 0;
+const unsigned long rfidCheckInterval = 1000; // RFID 체크 간격 (단위: ms)
+bool isPhoneDetected = false;
+
+// 사전 등록된 휴대전화 RFID 태그 번호
+byte phoneTag[] = {0xDE, 0xAD, 0xBE, 0xEF}; // 예제 RFID 태그 번호
+
+void setup() {
+    Serial.begin(9600);
+    SPI.begin();
+    rfid.PCD_Init();
+    lcd.begin(16, 2); // LCD 초기화 (16x2 크기)
+    pinMode(echoPin, INPUT);
+    pinMode(trigPin, OUTPUT);
+    pinMode(redLedPin, OUTPUT); // LED 핀을 출력 모드로 설정
+    pinMode(buzzerPin, OUTPUT); // 부저 핀을 출력 모드로 설정
+    pinMode(drivingButtonPin, INPUT_PULLUP); // 운전 중 상태 버튼 핀을 입력 모드로 설정하고 풀업 저항 사용
+    digitalWrite(redLedPin, LOW); // 초기에는 LED를 꺼둠
+    digitalWrite(buzzerPin, LOW); // 초기에는 부저를 꺼둠
+}
+
+void loop() {
+    // 운전 중 상태 버튼 확인
+    if (digitalRead(drivingButtonPin) == LOW && millis() - lastButtonPressTime > debounceDelay) {
+        isDriving = !isDriving; // 버튼이 눌릴 때마다 운전 중 상태를 토글
+        Serial.print("Driving status: ");
+        Serial.println(isDriving ? "Driving" : "Not driving");
+        lastButtonPressTime = millis(); // 마지막 버튼 눌림 시간 업데이트
+        delay(300); // 버튼 디바운스 처리를 위해 잠시 대기
+
+        if (!isDriving) {
+            endDrivingSession(); // 주행이 종료됨 - 모든 상태 초기화 및 LCD 출력
+        }
+    }
+
+    if (isDriving) {
+        // RFID 체크
+        if (millis() - lastRfidCheckTime > rfidCheckInterval) {
+            lastRfidCheckTime = millis();
+            if (rfid.PICC_IsNewCardPresent() && rfid.PICC_ReadCardSerial()) {
+                if (isPhoneTag(rfid.uid.uidByte, rfid.uid.size)) {
+                    isPhoneDetected = true;
+                    Serial.println("Phone detected!");
+                } else {
+                    isPhoneDetected = false;
+                    Serial.println("Unknown RFID tag detected.");
+                }
+                rfid.PICC_HaltA();
+            } else {
+                isPhoneDetected = false;
+                Serial.println("Phone not detected!");
+            }
+        }
+
+        if (!isPhoneDetected) {
+            digitalWrite(redLedPin, HIGH); // 휴대전화가 감지되지 않으면 빨간 LED 켬
+            tone(buzzerPin, 1000); // 휴대전화가 감지되지 않으면 부저 울림
+        } else {
+            digitalWrite(redLedPin, LOW); // 휴대전화가 감지되면 빨간 LED 끔
+            noTone(buzzerPin); // 휴대전화가 감지되면 부저 끔
+
+            // 휴대전화가 감지될 때만 초음파 센서로 터치 감지
+            long duration, distance;
+            digitalWrite(trigPin, LOW);
+            delayMicroseconds(2);
+            digitalWrite(trigPin, HIGH);
+            delayMicroseconds(10);
+            digitalWrite(trigPin, LOW);
+            
+            duration = pulseIn(echoPin, HIGH);
+            distance = ((float)(duration) / 2.0) * 0.0343;
+
+            /*
+            Serial.print("Duration: ");
+            Serial.println(duration);
+            Serial.print("Distance: ");
+            Serial.print(distance);
+            Serial.println(" cm");
+            */
+            
+            if (distance < distanceThreshold) {
+                if (!isTouchDetected) {
+                    isTouchDetected = true;
+                    touchCount++;
+                    Serial.print("Touch Count: ");
+                    Serial.println(touchCount);
+                }
+                lastTouchTime = millis();
+            } else {
+                if (isTouchDetected && (millis() - lastTouchTime > debounceDelay)) {
+                    isTouchDetected = false;
+                }
+            }
+            delay(50);
+        }
+    } else {
+        digitalWrite(redLedPin, LOW); // 운전 중이 아닐 때 빨간 LED 끔
+        noTone(buzzerPin); // 운전 중이 아닐 때 부저 끔
+    }
+}
+
+void endDrivingSession() {
+    // 주행이 종료됨 - 모든 상태 초기화 및 LCD 출력
+    lcd.clear();
+    if (touchCount > touchThreshold) {
+        lcd.print("Too many touches!");
+    } else {
+        lcd.print("Good job!");
+    }
+    delay(5000); // 메시지를 5초 동안 표시
+    lcd.clear();
+    lcd.print("Touch Count: ");
+    lcd.setCursor(0, 1);
+    lcd.print(touchCount);
+
+    // 모든 상태 초기화
+    touchCount = 0;
+    isTouchDetected = false;
+    isPhoneDetected = false;
+    digitalWrite(redLedPin, LOW);
+    noTone(buzzerPin);
+}
+
+// RFID 태그가 사전 등록된 휴대전화 태그인지 확인하는 함수
+bool isPhoneTag(byte *tag, byte size) {
+    if (size != sizeof(phoneTag)) {
+        return false; // 크기가 다르면 일치하지 않음
+    }
+    for (byte i = 0; i < size; i++) {
+        if (tag[i] != phoneTag[i]) {
+            return false; // 한 바이트라도 다르면 일치하지 않음
+        }
+    }
+    return true; // 모든 바이트가 일치하면 휴대전화 태그로 간주
+}
